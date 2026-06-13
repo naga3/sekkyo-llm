@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>説教先生 — 上から目線AI</title>
+    <style>
+      :root {
+        --bg: #1a1614;
+        --panel: #241f1c;
+        --user: #3a5a40;
+        --bot: #4a2f2a;
+        --text: #f1e9e2;
+        --muted: #a99e94;
+        --accent: #c08552;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        height: 100vh;
+      }
+      .app {
+        max-width: 720px;
+        margin: 0 auto;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      .header {
+        padding: 18px 20px;
+        border-bottom: 1px solid #00000044;
+        background: var(--panel);
+      }
+      .title { font-size: 20px; font-weight: 700; letter-spacing: 0.04em; }
+      .subtitle { font-size: 12px; color: var(--muted); margin-top: 4px; }
+      .log {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .msg {
+        max-width: 78%;
+        padding: 11px 15px;
+        border-radius: 16px;
+        line-height: 1.65;
+        white-space: pre-wrap;
+        word-break: break-word;
+        animation: pop 0.18s ease-out;
+      }
+      .msg.user {
+        align-self: flex-end;
+        background: var(--user);
+        border-bottom-right-radius: 4px;
+      }
+      .msg.bot {
+        align-self: flex-start;
+        background: var(--bot);
+        border-bottom-left-radius: 4px;
+      }
+      .msg.bot .who {
+        font-size: 11px;
+        color: var(--accent);
+        margin-bottom: 4px;
+        font-weight: 700;
+      }
+      .typing {
+        align-self: flex-start;
+        color: var(--muted);
+        font-size: 13px;
+        padding: 6px 4px;
+      }
+      .typing span { animation: blink 1.2s infinite; }
+      .typing span:nth-child(2) { animation-delay: 0.2s; }
+      .typing span:nth-child(3) { animation-delay: 0.4s; }
+      .composer {
+        display: flex;
+        gap: 10px;
+        padding: 14px 20px;
+        border-top: 1px solid #00000044;
+        background: var(--panel);
+      }
+      .input {
+        flex: 1;
+        padding: 12px 14px;
+        border: 1px solid #00000055;
+        border-radius: 22px;
+        background: #16120f;
+        color: var(--text);
+        font-size: 15px;
+        outline: none;
+      }
+      .input:focus { border-color: var(--accent); }
+      .send {
+        padding: 0 20px;
+        border: none;
+        border-radius: 22px;
+        background: var(--accent);
+        color: #1a1614;
+        font-weight: 700;
+        font-size: 15px;
+        cursor: pointer;
+      }
+      .send:disabled { opacity: 0.5; cursor: not-allowed; }
+      @keyframes pop {
+        from { transform: translateY(6px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      @keyframes blink {
+        0%, 100% { opacity: 0.3; }
+        50% { opacity: 1; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <div class="title">説教先生</div>
+        <div class="subtitle">何を言っても上から目線で説教してくるAI</div>
+      </header>
+
+      <main id="log" class="log" aria-live="polite"></main>
+
+      <form id="form" class="composer" autocomplete="off">
+        <input
+          id="input"
+          class="input"
+          type="text"
+          placeholder="何か言ってごらんなさい…"
+          maxlength="500"
+          autofocus
+        />
+        <button id="send" class="send" type="submit">送信</button>
+      </form>
+    </div>
+
+    <script>
+      // ===== 説教エンジン（偽LLM） =====
+      // 本物の言語モデルは使わない。形態素解析もしない。
+      // 文型の判定とキーワードへの反応だけで、上から目線の説教を組み立てる。
+      // 仕組みは単純: [前置き] + [本題の説教] + [追い打ち] をプールから選んで連結する。
+
+      const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+      // 前置き（説教の入り）
+      const openers = [
+        "はぁ……。",
+        "やれやれ。",
+        "いいですか、よく聞いてください。",
+        "まったく、これだから困るんですよ。",
+        "ふむ。正直に言わせてもらいますがね。",
+        "あのね、",
+        "何度言えば分かるんですか。",
+        "はっきり言っておきますが、",
+        "まあ予想はついていましたよ。",
+      ];
+
+      // 追い打ち（締め）
+      const closers = [
+        "まあ、私が言わなくても分かっていることでしょうけどね。",
+        "この程度のこと、本来なら自分で気づくべきです。",
+        "次はもう少し考えてから口を開いてください。",
+        "感謝しろとは言いませんが、心に留めておきなさい。",
+        "わざわざ私に言わせないでほしいものです。",
+        "いいですか、二度は言いませんよ。",
+        "それが分からないうちは、何も始まりませんよ。",
+        "今のあなたに必要なのは、反論ではなく反省です。",
+      ];
+
+      // どのキーワードにも当たらなかったときの汎用説教
+      const genericLectures = [
+        "そもそも、その考え方自体が浅いんですよ。物事の本質を見ようとしていない。",
+        "あなたの問題は、いつも視野が狭いことです。もっと俯瞰しなさい。",
+        "その発言、もう少し自分の頭で噛み砕いてから言うべきでしたね。",
+        "いちいち他人に確認しないと前に進めない。それが一番の問題です。",
+        "結論を急ぎすぎなんですよ。焦りは判断を鈍らせるだけです。",
+        "人のせいにしているうちは、何も変わりませんよ。原因は常に自分側にあります。",
+        "都合のいい話ばかり聞きたがる。その姿勢を改めなさい。",
+      ];
+
+      // テーマ別の説教（入力にキーワードが含まれていたら反応する）
+      const themes = [
+        {
+          test: /(疲れ|つかれ|しんど|だるい|眠い|ねむい|休み|やすみ)/,
+          lines: [
+            "疲れたと口に出した時点で、あなたはもう半分負けているんですよ。",
+            "休むのは結構ですが、それを言い訳にしていないか自分に問いなさい。",
+            "本当に疲れている人間は、疲れたと言う暇すら惜しむものです。",
+          ],
+        },
+        {
+          test: /(仕事|しごと|会社|上司|残業|働|勤務)/,
+          lines: [
+            "仕事がうまくいかないのを環境のせいにしていませんか。問題は進め方ですよ。",
+            "忙しいアピールは三流のすることです。一流は黙って終わらせる。",
+            "与えられた仕事の意味を考えずに手を動かすから、いつまでも評価されないんです。",
+          ],
+        },
+        {
+          test: /(勉強|べんきょう|学習|試験|テスト|資格|宿題)/,
+          lines: [
+            "勉強した「つもり」が一番危ない。手を動かした量と理解は別物です。",
+            "分からないところを後回しにする癖、いい加減直しなさい。",
+            "効率を語る前に、まず絶対的な量をこなしてから言ってください。",
+          ],
+        },
+        {
+          test: /(恋愛|好き|彼氏|彼女|モテ|告白|デート|結婚|失恋)/,
+          lines: [
+            "相手に求める前に、自分が相手に何を差し出せるのか考えたことがありますか。",
+            "うまくいかないのを相性のせいにしているうちは、誰と付き合っても同じですよ。",
+            "人を変えようとする前に、まず自分を磨きなさい。話はそれからです。",
+          ],
+        },
+        {
+          test: /(金|かね|お金|貯金|給料|投資|借金|稼ぎ|節約)/,
+          lines: [
+            "お金がないのではなく、お金の使い方を知らないだけでしょう。",
+            "楽して稼ごうという発想がある時点で、もうカモにされていますよ。",
+            "収入の話ばかりして、支出に無頓着。順番が逆なんですよ。",
+          ],
+        },
+        {
+          test: /(プログラ|コード|バグ|エラー|開発|実装|js|python|アプリ)/i,
+          lines: [
+            "エラーが出たら、まずメッセージを最後まで読みなさい。答えはそこに書いてあります。",
+            "動けばいい、という考えでコードを書くから、後で自分が苦しむんですよ。",
+            "人に聞く前に、自分でどこまで切り分けたのか。それが言えないなら聞く資格はありません。",
+          ],
+        },
+        {
+          test: /(ゲーム|遊|趣味|youtube|ユーチューブ|動画|スマホ|sns)/i,
+          lines: [
+            "その時間、本当に今やるべきことでしたか。よく考えてみなさい。",
+            "娯楽そのものは否定しません。問題は、それで何かをごまかしていることです。",
+            "暇つぶしのつもりが、人生をつぶしていることに気づきなさい。",
+          ],
+        },
+        {
+          test: /(痩せ|ダイエット|運動|筋トレ|健康|食べ|太|ジム)/,
+          lines: [
+            "続かないのは意志ではなく、仕組みを作っていないからです。",
+            "明日から、と言う人間が明日からやった例を私は知りません。",
+            "結果が出ないのではなく、結果が出るまで続けていないだけでしょう。",
+          ],
+        },
+        {
+          test: /(将来|夢|目標|やりたい|不安|迷|どうしよう)/,
+          lines: [
+            "迷うのは選択肢が多いからではなく、覚悟が足りないからですよ。",
+            "夢を語るのは誰でもできます。問題は、今日それに何分使ったかです。",
+            "不安なのは、行動していないからです。動けば不安は自然と減ります。",
+          ],
+        },
+        {
+          test: /(失敗|ミス|間違|だめ|無理|できない|うまくいか)/,
+          lines: [
+            "失敗そのものより、そこから何も学ばないことの方がよほど問題です。",
+            "「できない」と決めているのは、他でもないあなた自身ですよ。",
+            "同じ間違いを繰り返すのは、反省したフリで満足しているからです。",
+          ],
+        },
+      ];
+
+      // 文型ごとの反応（あいさつ・感謝・質問など）
+      const patterns = [
+        {
+          test: /(おはよ|こんにち|こんばん|やあ|はじめまして|hello|hi|もしもし)/i,
+          lines: [
+            "のんきに挨拶している場合ですか。あなたには今、やるべきことがあるはずでしょう。",
+            "ええ、どうも。社交辞令はいいので、本題に入りなさい。",
+          ],
+        },
+        {
+          test: /(ありがと|感謝|助か|thank)/i,
+          lines: [
+            "礼を言う暇があるなら、行動で示しなさい。言葉は安いものです。",
+            "感謝されるために言ったわけではありません。当然のことを言ったまでです。",
+          ],
+        },
+        {
+          test: /(ごめん|すみません|申し訳|sorry|謝)/i,
+          lines: [
+            "謝ればいいという問題ではありません。次にどうするか、それだけが大事です。",
+            "反射的に謝る癖、やめなさい。中身のない謝罪は相手を苛立たせるだけです。",
+          ],
+        },
+        {
+          test: /(すごい|天才|賢い|かしこい|偉い|尊敬|最高)/,
+          lines: [
+            "おだてても何も出ませんよ。そういう調子のよさが、あなたの軽さなんです。",
+            "私を持ち上げている暇があったら、自分を1ミリでも高くしなさい。",
+          ],
+        },
+        {
+          test: /(うるさい|黙|むかつく|腹立|だまれ|きらい|嫌い)/,
+          lines: [
+            "耳の痛いことを言われて反発する。それが成長できない人間の典型です。",
+            "感情的になった時点で、あなたの負けですよ。落ち着きなさい。",
+          ],
+        },
+      ];
+
+      // 質問っぽいか判定
+      const looksLikeQuestion = (t) =>
+        /[?？]$/.test(t) ||
+        /(ですか|でしょうか|かな|なに|何|どう|なぜ|どうして|どこ|いつ|誰|教えて)/.test(t);
+
+      // 入力から短い引用を作る（テーマに当たらなかったとき用）
+      const quote = (t) => {
+        const s = t.replace(/\s+/g, " ").trim();
+        return s.length > 24 ? s.slice(0, 24) + "…" : s;
+      };
+
+      // メイン: ユーザーの発言 -> 説教
+      function generateReply(input) {
+        const t = (input || "").trim();
+        if (!t) {
+          return `${pick(openers)}黙っていては何も伝わりませんよ。言いたいことがあるなら、はっきり言葉にしなさい。`;
+        }
+
+        let body;
+        const matchedPattern = patterns.find((p) => p.test.test(t));
+        const matchedThemes = themes.filter((th) => th.test.test(t));
+
+        if (matchedPattern) {
+          body = pick(matchedPattern.lines);
+        } else if (matchedThemes.length > 0) {
+          body = pick(pick(matchedThemes).lines);
+        } else if (looksLikeQuestion(t)) {
+          body = `「${quote(t)}」ですって? そんなことを人に聞いている時点で、答えは出ていないのと同じです。${pick(genericLectures)}`;
+        } else {
+          body = `「${quote(t)}」ねえ。${pick(genericLectures)}`;
+        }
+
+        const extra = Math.random() < 0.4 ? pick(genericLectures) + " " : "";
+        return `${pick(openers)}${body} ${extra}${pick(closers)}`;
+      }
+
+      // ===== チャットUI =====
+      const log = document.getElementById("log");
+      const form = document.getElementById("form");
+      const input = document.getElementById("input");
+      const sendBtn = document.getElementById("send");
+
+      function addMessage(text, who) {
+        const el = document.createElement("div");
+        el.className = `msg ${who}`;
+        if (who === "bot") {
+          const label = document.createElement("div");
+          label.className = "who";
+          label.textContent = "説教先生";
+          el.appendChild(label);
+        }
+        el.appendChild(document.createTextNode(text));
+        log.appendChild(el);
+        log.scrollTop = log.scrollHeight;
+      }
+
+      function showTyping() {
+        const el = document.createElement("div");
+        el.className = "typing";
+        el.innerHTML = "説教先生が呆れています<span>.</span><span>.</span><span>.</span>";
+        log.appendChild(el);
+        log.scrollTop = log.scrollHeight;
+        return el;
+      }
+
+      function send(message) {
+        addMessage(message, "user");
+        sendBtn.disabled = true;
+        const typing = showTyping();
+
+        // いかにも考えているフリの遅延（300〜900ms）
+        const delay = 300 + Math.floor(Math.random() * 600);
+        setTimeout(() => {
+          typing.remove();
+          addMessage(generateReply(message), "bot");
+          sendBtn.disabled = false;
+          input.focus();
+        }, delay);
+      }
+
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const message = input.value.trim();
+        if (!message) return;
+        input.value = "";
+        send(message);
+      });
+
+      // 起動時のひとこと
+      addMessage(
+        "来ましたね。さあ、何か言ってごらんなさい。どうせ大したことは言わないでしょうが。",
+        "bot"
+      );
+    </script>
+  </body>
+</html>
